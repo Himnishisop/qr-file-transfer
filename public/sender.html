@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Send File</title>
+  <style>
+    body { font-family: Arial; text-align: center; margin-top: 50px; }
+    input { margin-top: 20px; }
+    button { margin-top: 20px; padding: 10px 20px; }
+  </style>
+</head>
+<body>
+
+<h1>Send Files</h1>
+<input type="file" id="fileInput" multiple>
+<br>
+<button onclick="sendFile()">Send</button>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  const urlParams = new URLSearchParams(window.location.search);
+  const room = urlParams.get("room");
+  const socket = io();
+
+  socket.emit("join", room);
+
+  function sendFile() {
+    const input = document.getElementById("fileInput");
+    if (input.files.length === 0) return alert("Select a file first");
+
+    for (let i=0; i<input.files.length; i++) {
+      const file = input.files[i];
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const data = {
+          room: room,
+          name: file.name,
+          content: e.target.result
+        };
+        socket.emit("send-file", data);
+      };
+      reader.readAsDataURL(file);
+    }
+    alert("Files sent 🚀");
+  }
+</script>
+
+</body>
+</html>

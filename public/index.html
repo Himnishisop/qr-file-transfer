@@ -1,7 +1,43 @@
 <!DOCTYPE html>
 <html>
+<head>
+  <title>File Receiver</title>
+  <style>
+    body { font-family: Arial; text-align: center; margin-top: 50px; }
+    img { width: 200px; margin-top: 20px; }
+    #status { margin-top: 20px; font-weight: bold; }
+  </style>
+</head>
 <body>
-  <h1>Receiver Online</h1>
-  <p>Backend is live.</p>
+
+<h1>Receiver Online</h1>
+<p>Scan this QR from your mobile to send files</p>
+
+<!-- QR will encode session ID and backend URL -->
+<img id="qr" src="">
+
+<div id="status">Waiting for files...</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  const socket = io();
+
+  // Generate random session ID
+  const sessionId = Math.random().toString(36).substring(2, 8);
+
+  // Set QR code image
+  const backendURL = window.location.origin; // your backend URL
+  const qrData = encodeURIComponent(`${backendURL}/sender.html?room=${sessionId}`);
+  document.getElementById("qr").src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${qrData}`;
+
+  // Join this session room
+  socket.emit("join", sessionId);
+
+  // Receive file
+  socket.on("receive-file", (data) => {
+    document.getElementById("status").innerText = "New file received: " + data.name;
+  });
+</script>
+
 </body>
 </html>

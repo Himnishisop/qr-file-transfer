@@ -1,54 +1,47 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>File Receiver</title>
+  <title>Receive Files</title>
+  <script src="/socket.io/socket.io.js"></script>
   <style>
-    body { font-family: Arial; text-align: center; margin-top: 50px; }
-    #qr { width: 200px; margin-top: 20px; }
-    #files { margin-top: 30px; }
-    .file-item { margin: 10px 0; }
-    a { color: blue; text-decoration: none; }
+    body {
+      background: #0f0f0f;
+      color: #fff;
+      font-family: system-ui;
+      text-align: center;
+      padding-top: 40px;
+    }
+    img { width: 220px; margin: 20px auto; }
+    .status { opacity: 0.7; }
   </style>
 </head>
 <body>
 
-<h1>Receiver Online</h1>
-<p>Scan this QR from your mobile to send files</p>
+<h1>📥 Ready to Receive</h1>
+<p class="status">Scan QR from phone</p>
 
-<img id="qr" src="" alt="QR Code">
+<img id="qr">
 
-<div id="files">
-  <h3>Received Files:</h3>
-  <div id="fileList"></div>
-</div>
-
-<script src="/socket.io/socket.io.js"></script>
 <script>
   const socket = io();
+  const room = Math.random().toString(36).slice(2, 8);
+  socket.emit("join", room);
 
-  // Generate random session ID
-  const sessionId = Math.random().toString(36).substring(2, 8);
+  const senderURL =
+    location.origin + "/sender.html?room=" + room;
 
-  // QR code for mobile
-  const backendURL = window.location.origin; 
-  const qrData = encodeURIComponent(`${backendURL}/sender.html?room=${sessionId}`);
-  document.getElementById("qr").src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${qrData}`;
+  document.getElementById("qr").src =
+    "https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=" +
+    encodeURIComponent(senderURL);
 
-  // Join session room
-  socket.emit("join", sessionId);
-
-  // Listen for new files
-  socket.on("new-files", files => {
-    const fileList = document.getElementById("fileList");
-    files.forEach(file => {
-      const div = document.createElement("div");
-      div.className = "file-item";
-      const link = document.createElement("a");
-      link.href = `/uploads/${file}`;
-      link.download = file;
-      link.innerText = file;
-      div.appendChild(link);
-      fileList.appendChild(div);
+  socket.on("files", files => {
+    files.forEach(f => {
+      const a = document.createElement("a");
+      a.href = "/uploads/" + f;
+      a.download = "";
+      document.body.appendChild(a);
+      a.click(); // 🔥 AUTO DOWNLOAD
+      a.remove();
     });
   });
 </script>

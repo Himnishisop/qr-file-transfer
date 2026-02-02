@@ -9,54 +9,55 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// ===== STATIC FILES =====
-app.use(express.static(path.join(__dirname, "public")));
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use(express.static("public"));
+app.use("/uploads", express.static("uploads"));
 
-// ===== ENSURE UPLOADS FOLDER =====
-const uploadDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
+if (!fs.existsSync("uploads")) fs.mkdirSync("uploads");
+if (!fs.existsSync("chunks")) fs.mkdirSync("chunks");
 
-// ===== MULTER CONFIG =====
-const storage = multer.diskStorage({
-  destination: (_, __, cb) => cb(null, uploadDir),
-  filename: (_, file, cb) =>
-    cb(null, Date.now() + "-" + file.originalname)
+// multer config (chunk upload)
+const upload = multer({
+  dest: "temp/",
+  limits: { fileSize: 6 * 1024 * 1024 } // max 6MB per chunk
 });
-const upload = multer({ storage });
 
-// ===== SOCKET LOGIC =====
 io.on("connection", socket => {
-  console.log("🔌 socket connected:", socket.id);
-
-  socket.on("join", room => {
+  socket.on("join-room", room => {
     socket.join(room);
-    console.log("📦 socket joined room:", room);
-  });
-
-  socket.on("disconnect", () => {
-    console.log("❌ socket disconnected:", socket.id);
   });
 });
 
-// ===== UPLOAD ENDPOINT =====
-app.post("/upload/:room", upload.array("files"), (req, res) => {
-  const room = req.params.room;
-  const files = req.files.map(f => f.filename);
+// CHUNK UPLOAD ROUTE
+app.post("/upload-chunk", upload.single("chunk"), (req, res) => {
+  const { fileName, chunkIndex, totalChunks, room } = req.body;
 
-  console.log("⬆️ upload received for room:", room);
-  console.log("📁 files:", files);
+  const chunkPath = path.join(
+    "chunks",
+    `${fileName}.part${chunkIndex}`
+  );
 
-  // IMPORTANT: emit AFTER upload
-  io.to(room).emit("files", files);
+  fs.renameSync(req.file.path, chunkPath);
+
+  // merge if last chunk
+  if (Number(chunkIndex) + 1 === Number(totalChunks)) {
+    const finalPath = path.join("uploads", fileName);
+    const writeStream = fs.createWriteStream(finalPath);
+
+    for (let i = 0; i < totalChunks; i++) {
+      const partPath = path.join("chunks", `${fileName}.part${i}`);
+      const data = fs.readFileSync(partPath);
+      writeStream.write(data);
+      fs.unlinkSync(partPath);
+    }
+
+    writeStream.end();
+    io.to(room).emit("files", [fileName]);
+  }
 
   res.json({ success: true });
 });
 
-// ===== START SERVER =====
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log("🚀 server running on port", PORT);
-});
+server.listen(PORT, () =>
+  console.log("Server running on port", PORT)
+);

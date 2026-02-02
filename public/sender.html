@@ -2,61 +2,62 @@
 <html>
 <head>
   <title>Send Files</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
-    body { font-family: Arial; text-align: center; margin-top: 50px; }
-    input { margin-top: 20px; }
-    button { margin-top: 20px; padding: 10px 20px; font-size: 16px; }
+    body {
+      background: #0f0f0f;
+      color: #fff;
+      font-family: system-ui;
+      text-align: center;
+      padding: 20px;
+    }
+    #reader { width: 280px; margin: auto; }
+    #box { display: none; margin-top: 20px; }
+    button {
+      padding: 12px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+    }
   </style>
 </head>
 <body>
 
-<h1>Send Files</h1>
-<p>Select files to send to computer</p>
+<h2>📲 Scan QR</h2>
+<div id="reader"></div>
 
-<input type="file" id="fileInput" multiple>
-<br>
-<button onclick="sendFiles()">Send</button>
-
-<div id="status"></div>
+<div id="box">
+  <input type="file" id="files" multiple><br><br>
+  <button onclick="send()">Send</button>
+  <p id="msg"></p>
+</div>
 
 <script>
-  // Get session room from URL
-  const urlParams = new URLSearchParams(window.location.search);
-  const room = urlParams.get("room");
+  let room = null;
 
-  if (!room) {
-    document.body.innerHTML = "<h2>Error: No session found in URL</h2>";
-  }
-
-  async function sendFiles() {
-    const input = document.getElementById("fileInput");
-    const files = input.files;
-    if (!files.length) return alert("Select files first!");
-
-    const status = document.getElementById("status");
-    status.innerText = "Uploading...";
-
-    const formData = new FormData();
-    for (let i = 0; i < files.length; i++) {
-      formData.append("files", files[i]);
+  new Html5Qrcode("reader").start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: 250 },
+    text => {
+      const u = new URL(text);
+      room = u.searchParams.get("room");
+      if (!room) return alert("Invalid QR");
+      document.getElementById("reader").style.display = "none";
+      document.getElementById("box").style.display = "block";
     }
+  );
 
-    try {
-      const backendURL = window.location.origin;
-      const res = await fetch(`${backendURL}/upload/${room}`, {
-        method: "POST",
-        body: formData
-      });
-      const data = await res.json();
-      if (data.success) {
-        status.innerText = "Files sent successfully! ✅";
-      } else {
-        status.innerText = "Upload failed ❌";
-      }
-    } catch (err) {
-      status.innerText = "Error uploading files ❌";
-      console.error(err);
-    }
+  async function send() {
+    const f = document.getElementById("files").files;
+    if (!f.length) return;
+
+    const fd = new FormData();
+    for (let x of f) fd.append("files", x);
+
+    document.getElementById("msg").innerText = "Uploading...";
+
+    await fetch("/upload/" + room, { method: "POST", body: fd });
+    document.getElementById("msg").innerText = "Sent ✅";
   }
 </script>
 

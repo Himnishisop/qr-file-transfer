@@ -5,11 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Feed Bitch XD</title>
 <style>
-  body { font-family: sans-serif; text-align: center; padding: 30px; background: #111; color: #fff; }
-  button { padding: 15px 25px; font-size: 1.2em; margin: 20px; border-radius: 10px; background: #ff0055; color: #fff; border: none; cursor: pointer; }
-  #tapBox { display: none; margin-top: 30px; }
-  .angle { font-size: 1.5em; margin: 10px 0; }
-  .status { font-size: 2em; margin-top: 20px; color: #fff; }
+body { font-family: sans-serif; text-align: center; padding: 30px; background: #111; color: #fff; }
+button { padding: 15px 25px; font-size: 1.2em; margin: 20px; border-radius: 10px; background: #ff0055; color: #fff; border: none; cursor: pointer; }
+
+#popup {
+  display: none;
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  background: #222; border: 2px solid #ff0055; padding: 30px; border-radius: 20px; width: 90%; max-width: 400px;
+}
+
+.angle { font-size: 1.5em; margin: 10px 0; }
+.status { font-size: 2em; margin-top: 20px; color: #fff; }
 </style>
 </head>
 <body>
@@ -19,7 +25,7 @@
 <br>
 <button id="feed">Feed Bitch</button>
 
-<div id="tapBox">
+<div id="popup">
   <h2>Tap to Send 📱</h2>
   <button id="startTap">Allow Motion Access</button>
   <div class="angle">Front/Back (β): <span id="beta">0</span>°</div>
@@ -27,13 +33,14 @@
   <div class="status" id="status">Waiting...</div>
 </div>
 
+<script src="/socket.io/socket.io.js"></script>
 <script>
 const socket = io();
-const room = "room1"; // same as receiver
+const room = "room1";
 socket.emit("join-room", room);
 
 const feedBtn = document.getElementById("feed");
-const tapBox = document.getElementById("tapBox");
+const popup = document.getElementById("popup");
 const startTap = document.getElementById("startTap");
 const betaEl = document.getElementById("beta");
 const gammaEl = document.getElementById("gamma");
@@ -45,11 +52,13 @@ let tapTimeout = null;
 const TILT_THRESHOLD = 12;
 const RETURN_THRESHOLD = 6;
 
+// Show popup on Feed Bitch
 feedBtn.addEventListener("click", () => {
   if (!filesInput.files.length) return alert("Select files first!");
-  tapBox.style.display = "block";
+  popup.style.display = "block";
 });
 
+// Motion permission & start detecting
 startTap.addEventListener("click", () => {
   if(typeof DeviceOrientationEvent.requestPermission==='function'){
     DeviceOrientationEvent.requestPermission()
@@ -62,11 +71,41 @@ startTap.addEventListener("click", () => {
   }
 });
 
+// Function to detect tap
+async function detectTap(event){
+  const beta = event.beta;
+  const gamma = event.gamma;
+  betaEl.textContent = beta.toFixed(1);
+  gammaEl.textContent = gamma.toFixed(1);
+
+  if(!baseTilt){ baseTilt={beta,gamma}; return; }
+
+  // Tilt away
+  if(!tapTimeout &&
+     Math.abs(beta-baseTilt.beta)>TILT_THRESHOLD &&
+     Math.abs(gamma-baseTilt.gamma)>TILT_THRESHOLD){
+    tapTimeout = setTimeout(()=>tapTimeout=null,700);
+  }
+
+  // Return to base = TAP!
+  if(tapTimeout &&
+     Math.abs(beta-baseTilt.beta)<RETURN_THRESHOLD &&
+     Math.abs(gamma-baseTilt.gamma)<RETURN_THRESHOLD){
+    statusEl.textContent = "TAP ✅";
+    statusEl.style.color = "lime";
+    clearTimeout(tapTimeout); tapTimeout=null;
+
+    popup.style.display = "none"; // close popup
+    await sendFiles(); // start upload
+  }
+}
+
+// Chunk upload function (works up to 500MB)
 async function sendFiles() {
   const files = filesInput.files;
   if (!files.length) return;
+  const CHUNK_SIZE = 5*1024*1024;
 
-  const CHUNK_SIZE = 5*1024*1024; // 5MB
   for(let file of files){
     const totalChunks = Math.ceil(file.size/CHUNK_SIZE);
     for(let i=0;i<totalChunks;i++){
@@ -80,39 +119,9 @@ async function sendFiles() {
       await fetch("/upload-chunk",{method:"POST",body:fd});
     }
   }
-}
 
-function detectTap(event){
-  const beta = event.beta, gamma = event.gamma;
-  betaEl.textContent = beta.toFixed(1);
-  gammaEl.textContent = gamma.toFixed(1);
-
-  if(!baseTilt){ baseTilt={beta,gamma}; return; }
-
-  // tilt away
-  if(!tapTimeout &&
-     Math.abs(beta-baseTilt.beta)>TILT_THRESHOLD &&
-     Math.abs(gamma-baseTilt.gamma)>TILT_THRESHOLD){
-    tapTimeout = setTimeout(()=>tapTimeout=null,700);
-  }
-
-  // return = TAP!
-  if(tapTimeout &&
-     Math.abs(beta-baseTilt.beta)<RETURN_THRESHOLD &&
-     Math.abs(gamma-baseTilt.gamma)<RETURN_THRESHOLD){
-    statusEl.textContent = "TAP ✅";
-    statusEl.style.color = "lime";
-    clearTimeout(tapTimeout); tapTimeout=null;
-
-    sendFiles(); // start upload on tap
-
-    setTimeout(()=>{
-      statusEl.textContent = "Waiting...";
-      statusEl.style.color="#fff";
-    },1000);
-  }
+  alert("Upload Complete ✅");
 }
 </script>
-
 </body>
 </html>

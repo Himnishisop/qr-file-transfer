@@ -9,26 +9,54 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.use(express.static("public"));
-app.use("/uploads", express.static("uploads"));
+// ===== STATIC FILES =====
+app.use(express.static(path.join(__dirname, "public")));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-if (!fs.existsSync("uploads")) fs.mkdirSync("uploads");
+// ===== ENSURE UPLOADS FOLDER =====
+const uploadDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
 
+// ===== MULTER CONFIG =====
 const storage = multer.diskStorage({
-  destination: "uploads",
-  filename: (_, file, cb) => cb(null, Date.now() + "-" + file.originalname)
+  destination: (_, __, cb) => cb(null, uploadDir),
+  filename: (_, file, cb) =>
+    cb(null, Date.now() + "-" + file.originalname)
 });
 const upload = multer({ storage });
 
-app.post("/upload/:room", upload.array("files"), (req, res) => {
-  const files = req.files.map(f => f.filename);
-  io.to(req.params.room).emit("files", files);
-  res.json({ ok: true });
-});
-
+// ===== SOCKET LOGIC =====
 io.on("connection", socket => {
-  socket.on("join", room => socket.join(room));
+  console.log("🔌 socket connected:", socket.id);
+
+  socket.on("join", room => {
+    socket.join(room);
+    console.log("📦 socket joined room:", room);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("❌ socket disconnected:", socket.id);
+  });
 });
 
+// ===== UPLOAD ENDPOINT =====
+app.post("/upload/:room", upload.array("files"), (req, res) => {
+  const room = req.params.room;
+  const files = req.files.map(f => f.filename);
+
+  console.log("⬆️ upload received for room:", room);
+  console.log("📁 files:", files);
+
+  // IMPORTANT: emit AFTER upload
+  io.to(room).emit("files", files);
+
+  res.json({ success: true });
+});
+
+// ===== START SERVER =====
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log("Server running"));
+server.listen(PORT, () => {
+  console.log("🚀 server running on port", PORT);
+});

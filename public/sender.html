@@ -5,17 +5,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Feed Bitch XD</title>
 <style>
-body { font-family: sans-serif; text-align: center; padding: 30px; background: #111; color: #fff; }
+body { font-family: sans-serif; text-align: center; padding: 30px; background: #111; color: #fff; overflow-x: hidden; }
 button { padding: 15px 25px; font-size: 1.2em; margin: 20px; border-radius: 10px; background: #ff0055; color: #fff; border: none; cursor: pointer; }
 
 #popup {
   display: none;
   position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
-  background: #222; border: 2px solid #ff0055; padding: 30px; border-radius: 20px; width: 90%; max-width: 400px;
+  background: #222; border: 2px solid #ff0055; padding: 30px; border-radius: 20px; width: 90%; max-width: 400px; z-index:1000;
 }
 
 .angle { font-size: 1.5em; margin: 10px 0; }
 .status { font-size: 2em; margin-top: 20px; color: #fff; }
+
+#overlay {
+  display:none;
+  position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);color:#fff;z-index:9999;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+}
+.progress-container{width:80%;max-width:400px;margin-top:20px;}
+.progress-bar{width:0%;height:20px;background:#ff0055;border-radius:10px;margin:5px 0;transition:width 0.3s;}
 </style>
 </head>
 <body>
@@ -33,6 +41,11 @@ button { padding: 15px 25px; font-size: 1.2em; margin: 20px; border-radius: 10px
   <div class="status" id="status">Waiting...</div>
 </div>
 
+<div id="overlay">
+  <h2>Uploading Files...</h2>
+  <div id="progressBars"></div>
+</div>
+
 <script src="/socket.io/socket.io.js"></script>
 <script>
 const socket = io();
@@ -46,19 +59,19 @@ const betaEl = document.getElementById("beta");
 const gammaEl = document.getElementById("gamma");
 const statusEl = document.getElementById("status");
 const filesInput = document.getElementById("files");
+const overlay = document.getElementById("overlay");
+const progressBarsDiv = document.getElementById("progressBars");
 
 let baseTilt = null;
 let tapTimeout = null;
 const TILT_THRESHOLD = 12;
 const RETURN_THRESHOLD = 6;
 
-// Show popup on Feed Bitch
 feedBtn.addEventListener("click", () => {
   if (!filesInput.files.length) return alert("Select files first!");
   popup.style.display = "block";
 });
 
-// Motion permission & start detecting
 startTap.addEventListener("click", () => {
   if(typeof DeviceOrientationEvent.requestPermission==='function'){
     DeviceOrientationEvent.requestPermission()
@@ -71,42 +84,29 @@ startTap.addEventListener("click", () => {
   }
 });
 
-// Function to detect tap
-async function detectTap(event){
-  const beta = event.beta;
-  const gamma = event.gamma;
-  betaEl.textContent = beta.toFixed(1);
-  gammaEl.textContent = gamma.toFixed(1);
-
-  if(!baseTilt){ baseTilt={beta,gamma}; return; }
-
-  // Tilt away
-  if(!tapTimeout &&
-     Math.abs(beta-baseTilt.beta)>TILT_THRESHOLD &&
-     Math.abs(gamma-baseTilt.gamma)>TILT_THRESHOLD){
-    tapTimeout = setTimeout(()=>tapTimeout=null,700);
-  }
-
-  // Return to base = TAP!
-  if(tapTimeout &&
-     Math.abs(beta-baseTilt.beta)<RETURN_THRESHOLD &&
-     Math.abs(gamma-baseTilt.gamma)<RETURN_THRESHOLD){
-    statusEl.textContent = "TAP ✅";
-    statusEl.style.color = "lime";
-    clearTimeout(tapTimeout); tapTimeout=null;
-
-    popup.style.display = "none"; // close popup
-    await sendFiles(); // start upload
-  }
-}
-
-// Chunk upload function (works up to 500MB)
 async function sendFiles() {
   const files = filesInput.files;
   if (!files.length) return;
+
+  overlay.style.display="flex";
+  progressBarsDiv.innerHTML = "";
   const CHUNK_SIZE = 5*1024*1024;
 
-  for(let file of files){
+  // create progress bars
+  const bars = [];
+  for(let f of files){
+    const bar = document.createElement("div");
+    bar.className="progress-bar";
+    bars.push(bar);
+    const container = document.createElement("div");
+    container.className="progress-container";
+    container.appendChild(bar);
+    progressBarsDiv.appendChild(container);
+  }
+
+  // upload files chunk by chunk
+  for(let fi=0;fi<files.length;fi++){
+    const file = files[fi];
     const totalChunks = Math.ceil(file.size/CHUNK_SIZE);
     for(let i=0;i<totalChunks;i++){
       const chunk = file.slice(i*CHUNK_SIZE,(i+1)*CHUNK_SIZE);
@@ -117,10 +117,40 @@ async function sendFiles() {
       fd.append("totalChunks",totalChunks);
       fd.append("room",room);
       await fetch("/upload-chunk",{method:"POST",body:fd});
+      bars[fi].style.width = `${((i+1)/totalChunks)*100}%`;
     }
   }
 
-  alert("Upload Complete ✅");
+  setTimeout(()=>{overlay.style.display="none"; alert("Upload Complete ✅");},500);
+}
+
+// Tap detection
+function detectTap(event){
+  const beta = event.beta, gamma = event.gamma;
+  betaEl.textContent = beta.toFixed(1);
+  gammaEl.textContent = gamma.toFixed(1);
+
+  if(!baseTilt){ baseTilt={beta,gamma}; return; }
+
+  if(!tapTimeout &&
+     Math.abs(beta-baseTilt.beta)>TILT_THRESHOLD &&
+     Math.abs(gamma-baseTilt.gamma)>TILT_THRESHOLD){
+    tapTimeout = setTimeout(()=>tapTimeout=null,700);
+  }
+
+  if(tapTimeout &&
+     Math.abs(beta-baseTilt.beta)<RETURN_THRESHOLD &&
+     Math.abs(gamma-baseTilt.gamma)<RETURN_THRESHOLD){
+    statusEl.textContent="TAP ✅";
+    statusEl.style.color="lime";
+    clearTimeout(tapTimeout); tapTimeout=null;
+    popup.style.display="none";
+
+    // shake animation effect on mobile while uploading
+    document.body.animate([{transform:"rotate(0deg)"},{transform:"rotate(3deg)"},{transform:"rotate(-3deg)"},{transform:"rotate(0deg)"}],{duration:300,iterations:3});
+
+    sendFiles();
+  }
 }
 </script>
 </body>

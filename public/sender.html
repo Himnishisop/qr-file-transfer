@@ -1,57 +1,118 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Send File</title>
-  <script src="/socket.io/socket.io.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feed Bitch XD</title>
+<style>
+  body { font-family: sans-serif; text-align: center; padding: 30px; background: #111; color: #fff; }
+  button { padding: 15px 25px; font-size: 1.2em; margin: 20px; border-radius: 10px; background: #ff0055; color: #fff; border: none; cursor: pointer; }
+  #tapBox { display: none; margin-top: 30px; }
+  .angle { font-size: 1.5em; margin: 10px 0; }
+  .status { font-size: 2em; margin-top: 20px; color: #fff; }
+</style>
 </head>
 <body>
-  <h2>Send File (up to 500MB)</h2>
 
-  <input type="file" id="files">
-  <br><br>
-  <button onclick="send()">Send</button>
-  <p id="msg"></p>
+<h1>Feed Bitch XD 🍖</h1>
+<input type="file" id="files" multiple>
+<br>
+<button id="feed">Feed Bitch</button>
+
+<div id="tapBox">
+  <h2>Tap to Send 📱</h2>
+  <button id="startTap">Allow Motion Access</button>
+  <div class="angle">Front/Back (β): <span id="beta">0</span>°</div>
+  <div class="angle">Left/Right (γ): <span id="gamma">0</span>°</div>
+  <div class="status" id="status">Waiting...</div>
+</div>
 
 <script>
 const socket = io();
-const room = "room1";
+const room = "room1"; // same as receiver
 socket.emit("join-room", room);
 
-async function send() {
-  const file = document.getElementById("files").files[0];
-  if (!file) return alert("Select a file");
+const feedBtn = document.getElementById("feed");
+const tapBox = document.getElementById("tapBox");
+const startTap = document.getElementById("startTap");
+const betaEl = document.getElementById("beta");
+const gammaEl = document.getElementById("gamma");
+const statusEl = document.getElementById("status");
+const filesInput = document.getElementById("files");
 
-  const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
-  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+let baseTilt = null;
+let tapTimeout = null;
+const TILT_THRESHOLD = 12;
+const RETURN_THRESHOLD = 6;
 
-  document.getElementById("msg").innerText =
-    `Uploading 0 / ${totalChunks}`;
+feedBtn.addEventListener("click", () => {
+  if (!filesInput.files.length) return alert("Select files first!");
+  tapBox.style.display = "block";
+});
 
-  for (let i = 0; i < totalChunks; i++) {
-    const chunk = file.slice(
-      i * CHUNK_SIZE,
-      (i + 1) * CHUNK_SIZE
-    );
-
-    const fd = new FormData();
-    fd.append("chunk", chunk);
-    fd.append("fileName", file.name);
-    fd.append("chunkIndex", i);
-    fd.append("totalChunks", totalChunks);
-    fd.append("room", room);
-
-    await fetch("/upload-chunk", {
-      method: "POST",
-      body: fd
+startTap.addEventListener("click", () => {
+  if(typeof DeviceOrientationEvent.requestPermission==='function'){
+    DeviceOrientationEvent.requestPermission()
+    .then(permission=>{
+      if(permission==='granted') window.addEventListener('deviceorientation', detectTap);
+      else alert("Permission denied 😢");
     });
+  } else {
+    window.addEventListener('deviceorientation', detectTap);
+  }
+});
 
-    document.getElementById("msg").innerText =
-      `Uploading ${i + 1} / ${totalChunks}`;
+async function sendFiles() {
+  const files = filesInput.files;
+  if (!files.length) return;
+
+  const CHUNK_SIZE = 5*1024*1024; // 5MB
+  for(let file of files){
+    const totalChunks = Math.ceil(file.size/CHUNK_SIZE);
+    for(let i=0;i<totalChunks;i++){
+      const chunk = file.slice(i*CHUNK_SIZE,(i+1)*CHUNK_SIZE);
+      const fd = new FormData();
+      fd.append("chunk",chunk);
+      fd.append("fileName",file.name);
+      fd.append("chunkIndex",i);
+      fd.append("totalChunks",totalChunks);
+      fd.append("room",room);
+      await fetch("/upload-chunk",{method:"POST",body:fd});
+    }
+  }
+}
+
+function detectTap(event){
+  const beta = event.beta, gamma = event.gamma;
+  betaEl.textContent = beta.toFixed(1);
+  gammaEl.textContent = gamma.toFixed(1);
+
+  if(!baseTilt){ baseTilt={beta,gamma}; return; }
+
+  // tilt away
+  if(!tapTimeout &&
+     Math.abs(beta-baseTilt.beta)>TILT_THRESHOLD &&
+     Math.abs(gamma-baseTilt.gamma)>TILT_THRESHOLD){
+    tapTimeout = setTimeout(()=>tapTimeout=null,700);
   }
 
-  document.getElementById("msg").innerText =
-    "Upload complete ✅";
+  // return = TAP!
+  if(tapTimeout &&
+     Math.abs(beta-baseTilt.beta)<RETURN_THRESHOLD &&
+     Math.abs(gamma-baseTilt.gamma)<RETURN_THRESHOLD){
+    statusEl.textContent = "TAP ✅";
+    statusEl.style.color = "lime";
+    clearTimeout(tapTimeout); tapTimeout=null;
+
+    sendFiles(); // start upload on tap
+
+    setTimeout(()=>{
+      statusEl.textContent = "Waiting...";
+      statusEl.style.color="#fff";
+    },1000);
+  }
 }
 </script>
+
 </body>
 </html>

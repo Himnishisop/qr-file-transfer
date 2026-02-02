@@ -10,35 +10,25 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.static("public"));
+app.use("/uploads", express.static("uploads"));
 
-// Storage folder for uploaded files
-const uploadFolder = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadFolder)) fs.mkdirSync(uploadFolder);
+if (!fs.existsSync("uploads")) fs.mkdirSync("uploads");
 
-// Multer setup
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadFolder),
-  filename: (req, file, cb) => cb(null, file.originalname),
+  destination: "uploads",
+  filename: (_, file, cb) => cb(null, Date.now() + "-" + file.originalname)
 });
 const upload = multer({ storage });
 
-// Upload endpoint
 app.post("/upload/:room", upload.array("files"), (req, res) => {
-  const room = req.params.room;
-  const files = req.files.map(f => f.originalname);
-
-  // Notify computer page via WebSocket
-  io.to(room).emit("new-files", files);
-  res.json({ success: true, files });
+  const files = req.files.map(f => f.filename);
+  io.to(req.params.room).emit("files", files);
+  res.json({ ok: true });
 });
 
-// WebSocket for session rooms
 io.on("connection", socket => {
-  socket.on("join", room => {
-    socket.join(room);
-    console.log("Joined room:", room);
-  });
+  socket.on("join", room => socket.join(room));
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () => console.log("Server running"));

@@ -1,65 +1,57 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Send Files</title>
-  <script src="https://unpkg.com/html5-qrcode"></script>
-  <style>
-    body {
-      background: #0f0f0f;
-      color: #fff;
-      font-family: system-ui;
-      text-align: center;
-      padding: 20px;
-    }
-    #reader { width: 280px; margin: auto; }
-    #box { display: none; margin-top: 20px; }
-    button {
-      padding: 12px 20px;
-      font-size: 16px;
-      border: none;
-      border-radius: 8px;
-    }
-  </style>
+  <title>Send File</title>
+  <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
+  <h2>Send File (up to 500MB)</h2>
 
-<h2>📲 Scan QR</h2>
-<div id="reader"></div>
-
-<div id="box">
-  <input type="file" id="files" multiple><br><br>
+  <input type="file" id="files">
+  <br><br>
   <button onclick="send()">Send</button>
   <p id="msg"></p>
-</div>
 
 <script>
-  let room = null;
+const socket = io();
+const room = "room1";
+socket.emit("join-room", room);
 
-  new Html5Qrcode("reader").start(
-    { facingMode: "environment" },
-    { fps: 10, qrbox: 250 },
-    text => {
-      const u = new URL(text);
-      room = u.searchParams.get("room");
-      if (!room) return alert("Invalid QR");
-      document.getElementById("reader").style.display = "none";
-      document.getElementById("box").style.display = "block";
-    }
-  );
+async function send() {
+  const file = document.getElementById("files").files[0];
+  if (!file) return alert("Select a file");
 
-  async function send() {
-    const f = document.getElementById("files").files;
-    if (!f.length) return;
+  const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+  document.getElementById("msg").innerText =
+    `Uploading 0 / ${totalChunks}`;
+
+  for (let i = 0; i < totalChunks; i++) {
+    const chunk = file.slice(
+      i * CHUNK_SIZE,
+      (i + 1) * CHUNK_SIZE
+    );
 
     const fd = new FormData();
-    for (let x of f) fd.append("files", x);
+    fd.append("chunk", chunk);
+    fd.append("fileName", file.name);
+    fd.append("chunkIndex", i);
+    fd.append("totalChunks", totalChunks);
+    fd.append("room", room);
 
-    document.getElementById("msg").innerText = "Uploading...";
+    await fetch("/upload-chunk", {
+      method: "POST",
+      body: fd
+    });
 
-    await fetch("/upload/" + room, { method: "POST", body: fd });
-    document.getElementById("msg").innerText = "Sent ✅";
+    document.getElementById("msg").innerText =
+      `Uploading ${i + 1} / ${totalChunks}`;
   }
-</script>
 
+  document.getElementById("msg").innerText =
+    "Upload complete ✅";
+}
+</script>
 </body>
 </html>

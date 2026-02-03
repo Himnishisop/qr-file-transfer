@@ -3,77 +3,45 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Feed Bitch XD</title>
+<title>Feed Bitch</title>
 
 <style>
 body{
-  margin:0;
-  background:#0a0a0a;
-  color:#fff;
-  font-family:system-ui;
-  text-align:center;
+  margin:0; background:#0a0a0a; color:#fff;
+  font-family:system-ui; text-align:center;
 }
-h1{margin-top:40px}
-
 button{
-  padding:16px 30px;
-  font-size:1.2em;
-  border-radius:16px;
-  border:none;
+  padding:16px 30px; font-size:1.2em;
+  border-radius:16px; border:none;
   background:linear-gradient(45deg,#ff0055,#ff8800);
-  color:white;
-  cursor:pointer;
+  color:white; cursor:pointer;
 }
-
 #popup,#loader{
-  position:fixed;
-  inset:0;
-  display:none;
-  align-items:center;
-  justify-content:center;
-  background:rgba(0,0,0,.92);
-  z-index:10;
+  position:fixed; inset:0;
+  display:none; align-items:center; justify-content:center;
+  background:rgba(0,0,0,.92); z-index:10;
 }
-
 .card{
-  background:#151515;
-  border-radius:22px;
-  padding:30px;
-  width:90%;
-  max-width:420px;
+  background:#151515; padding:30px;
+  border-radius:22px; width:90%; max-width:420px;
   border:2px solid #ff0055;
 }
-
-.angle{font-size:1.4em;margin:10px}
-.status{font-size:2em;margin-top:20px}
-
-.bar{
-  height:14px;
-  background:#222;
-  border-radius:20px;
-  overflow:hidden;
-  margin-top:20px;
-}
-.fill{
-  height:100%;
-  width:0%;
-  background:linear-gradient(90deg,#00f0ff,#ff00aa);
-  transition:width .3s;
-}
+.angle{font-size:1.3em;margin:8px}
+.status{font-size:2em;margin-top:16px}
+.bar{height:14px;background:#222;border-radius:20px;overflow:hidden;margin-top:20px}
+.fill{height:100%;width:0%;background:linear-gradient(90deg,#00f0ff,#ff00aa)}
 </style>
 </head>
 
 <body>
 
 <h1>Feed Bitch 🍖</h1>
-
 <input type="file" id="files" multiple><br><br>
-<button id="feedBtn">Feed Bitch</button>
+<button id="feed">Feed Bitch</button>
 
-<!-- TAP POPUP -->
 <div id="popup">
   <div class="card">
-    <h2>Tap to Transmit 🧠</h2>
+    <h2>Tap to Send 🧠</h2>
     <button id="startTap">Enable Motion</button>
     <div class="angle">β: <span id="beta">0</span>°</div>
     <div class="angle">γ: <span id="gamma">0</span>°</div>
@@ -81,10 +49,9 @@ button{
   </div>
 </div>
 
-<!-- LOADING SCREEN -->
 <div id="loader">
   <div class="card">
-    <h2>Transferring Energy ⚡</h2>
+    <h2>Sending Energy ⚡</h2>
     <div id="percent">0%</div>
     <div class="bar"><div class="fill" id="fill"></div></div>
   </div>
@@ -96,116 +63,91 @@ const socket = io();
 const ROOM = "room1";
 socket.emit("join-room", ROOM);
 
-const filesInput = document.getElementById("files");
 const popup = document.getElementById("popup");
 const loader = document.getElementById("loader");
 const betaEl = document.getElementById("beta");
 const gammaEl = document.getElementById("gamma");
 const statusEl = document.getElementById("status");
+const filesInput = document.getElementById("files");
 const fill = document.getElementById("fill");
 const percent = document.getElementById("percent");
 
-let baseTilt = null;
-let tapWindow = null;
+let base = null;
+let armed = false;
 
-const TILT_THRESHOLD = 12;
-const RETURN_THRESHOLD = 6;
-const CHUNK_SIZE = 30 * 1024 * 1024; // 🔥 30MB chunks
+// 🔥 VERY SENSITIVE VALUES
+const TILT_OUT = 6;      // tiny tilt
+const TILT_BACK = 3;    // tiny return
+const TAP_WINDOW = 400; // fast flick
 
-// Feed button → open popup
-document.getElementById("feedBtn").onclick = () => {
-  if(!filesInput.files.length){
-    alert("Select files first bro");
-    return;
-  }
+document.getElementById("feed").onclick = () => {
+  if(!filesInput.files.length) return alert("Select files first");
   popup.style.display = "flex";
 };
 
-// Enable motion
 document.getElementById("startTap").onclick = () => {
-  if (typeof DeviceOrientationEvent.requestPermission === "function") {
-    DeviceOrientationEvent.requestPermission().then(p => {
-      if (p === "granted")
-        window.addEventListener("deviceorientation", detectTap);
+  if (DeviceOrientationEvent.requestPermission) {
+    DeviceOrientationEvent.requestPermission().then(p=>{
+      if(p==="granted") window.addEventListener("deviceorientation", detectTap);
     });
   } else {
     window.addEventListener("deviceorientation", detectTap);
   }
 };
 
-// TAP detection
 function detectTap(e){
-  const b = e.beta;
-  const g = e.gamma;
-
+  const b = e.beta, g = e.gamma;
   betaEl.textContent = b.toFixed(1);
   gammaEl.textContent = g.toFixed(1);
 
-  if (!baseTilt){
-    baseTilt = { b, g };
-    return;
+  if(!base){ base={b,g}; return; }
+
+  const diffB = Math.abs(b-base.b);
+  const diffG = Math.abs(g-base.g);
+
+  // slight flick away (ANY axis)
+  if(!armed && (diffB > TILT_OUT || diffG > TILT_OUT)){
+    armed = true;
+    setTimeout(()=>armed=false, TAP_WINDOW);
   }
 
-  // Tilt away
-  if (!tapWindow &&
-      Math.abs(b - baseTilt.b) > TILT_THRESHOLD &&
-      Math.abs(g - baseTilt.g) > TILT_THRESHOLD) {
-    tapWindow = setTimeout(() => tapWindow = null, 700);
-  }
-
-  // Return = TAP
-  if (tapWindow &&
-      Math.abs(b - baseTilt.b) < RETURN_THRESHOLD &&
-      Math.abs(g - baseTilt.g) < RETURN_THRESHOLD) {
-
-    statusEl.textContent = "TAP ⚡";
-    popup.style.display = "none";
-    loader.style.display = "flex";
-
+  // return back = TAP
+  if(armed && diffB < TILT_BACK && diffG < TILT_BACK){
+    armed = false;
+    popup.style.display="none";
+    loader.style.display="flex";
     window.removeEventListener("deviceorientation", detectTap);
-
     startTransfer();
   }
 }
 
-// Start transfer
 async function startTransfer(){
   const files = [...filesInput.files];
 
-  // 🔮 Telekinesis signal (files appear instantly on PC)
+  // instant telekinesis on PC
   socket.emit("telekinesis-start", {
     room: ROOM,
-    files: files.map(f => f.name)
+    files: files.map(f=>f.name)
   });
 
-  let uploadedBytes = 0;
-  const totalBytes = files.reduce((s,f)=>s+f.size,0);
+  let done = 0;
+  const total = files.reduce((s,f)=>s+f.size,0);
 
-  for (const file of files){
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+  for(const file of files){
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("room", ROOM);
 
-    for (let i=0; i<totalChunks; i++){
-      const chunk = file.slice(i*CHUNK_SIZE,(i+1)*CHUNK_SIZE);
+    await fetch("/upload", { method:"POST", body:fd });
 
-      const fd = new FormData();
-      fd.append("chunk", chunk);
-      fd.append("fileName", file.name);
-      fd.append("chunkIndex", i);
-      fd.append("totalChunks", totalChunks);
-      fd.append("room", ROOM);
-
-      await fetch("/upload-chunk",{ method:"POST", body:fd });
-
-      uploadedBytes += chunk.size;
-      const p = Math.floor(uploadedBytes / totalBytes * 100);
-      fill.style.width = p + "%";
-      percent.textContent = p + "%";
-    }
+    done += file.size;
+    const p = Math.floor(done/total*100);
+    fill.style.width = p+"%";
+    percent.textContent = p+"%";
   }
 
   percent.textContent = "DONE 🔥";
 }
 </script>
-
 </body>
 </html>

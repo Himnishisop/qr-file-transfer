@@ -1,19 +1,17 @@
-import express from "express";
-import http from "http";
-import { Server } from "socket.io";
-import path from "path";
-import { fileURLToPath } from "url";
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+const path = require("path");
 
 const app = express();
 const server = http.createServer(app);
+
 const io = new Server(server, {
   maxHttpBufferSize: 500 * 1024 * 1024 // 500MB
 });
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-app.use(express.static(__dirname));
+// serve static files
+app.use(express.static(path.join(__dirname)));
 
 io.on("connection", (socket) => {
   console.log("🧠 Receiver Online:", socket.id);
@@ -29,8 +27,13 @@ io.on("connection", (socket) => {
   socket.on("file-done", (data) => {
     socket.broadcast.emit("file-done", data);
   });
+
+  socket.on("disconnect", () => {
+    console.log("❌ Disconnected:", socket.id);
+  });
 });
 
-server.listen(3000, () => {
-  console.log("🔥 Server running on http://localhost:3000");
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log("🔥 Server running on port", PORT);
 });

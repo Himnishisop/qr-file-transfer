@@ -2,132 +2,91 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Send Cart</title>
+<title>Receiver Cart</title>
+<script src="/socket.io/socket.io.js"></script>
 
 <style>
 body{
   margin:0;
-  background:#0b0b0b;
+  background:#050505;
   color:#fff;
   font-family:system-ui;
   overflow:hidden;
 }
 
-h1{text-align:center;margin:20px}
-
-input{display:block;margin:20px auto}
-
 #cart{
   position:fixed;
-  bottom:-200px;
-  left:0;
-  right:0;
-  height:180px;
-  background:linear-gradient(180deg,#ff0055,#ff8800);
-  border-radius:30px 30px 0 0;
+  bottom:-300px;
+  left:50%;
+  transform:translateX(-50%);
+  width:400px;
+  background:linear-gradient(180deg,#00ffff,#ff00aa);
+  border-radius:30px;
   padding:20px;
-  transition:.4s ease;
-  touch-action:none;
+  text-align:center;
+  transition:1s cubic-bezier(.2,1.8,.4,1);
 }
 
-#cart.visible{bottom:0}
+#cart.show{bottom:40%}
 
-#cart h2{text-align:center;margin:0}
+#files{font-size:.9em;margin-top:10px}
 
-#filesList{
-  max-height:90px;
-  overflow:auto;
-  margin-top:10px;
-  font-size:.9em;
-}
-
-.handle{
-  width:50px;
-  height:6px;
-  background:#000;
-  border-radius:10px;
-  margin:0 auto 10px;
+button{
+  margin-top:20px;
+  padding:14px 26px;
+  border:none;
+  border-radius:14px;
+  font-size:1em;
+  cursor:pointer;
 }
 </style>
 </head>
 
 <body>
 
-<h1>Select Files</h1>
-<input type="file" id="files" multiple>
+<h1 style="text-align:center;margin-top:20px">
+🧠 Receiver Online
+</h1>
 
 <div id="cart">
-  <div class="handle"></div>
-  <h2>🛒 Send Cart</h2>
-  <div id="filesList"></div>
+  <h2>🛒 Incoming Cart</h2>
+  <div id="files"></div>
+  <button id="download" style="display:none">Download Cart</button>
 </div>
 
-<script src="/socket.io/socket.io.js"></script>
 <script>
 const socket = io();
-const ROOM = "room1";
-socket.emit("join-room",ROOM);
+socket.emit("join-room","room1");
 
-const filesInput = document.getElementById("files");
-const cart = document.getElementById("cart");
-const list = document.getElementById("filesList");
+const cart=document.getElementById("cart");
+const filesDiv=document.getElementById("files");
+const btn=document.getElementById("download");
 
-let startY = null;
-let sent = false;
+let files=[];
 
-filesInput.onchange = () => {
-  list.innerHTML = "";
-  [...filesInput.files].forEach(f=>{
+socket.on("file-init",list=>{
+  files=list;
+  filesDiv.innerHTML="";
+  list.forEach(f=>{
     const d=document.createElement("div");
-    d.textContent="• "+f.name;
-    list.appendChild(d);
+    d.textContent="• "+f;
+    filesDiv.appendChild(d);
   });
-  cart.classList.add("visible");
+  cart.classList.add("show");
+
+  setTimeout(()=>btn.style.display="inline-block",1200);
+});
+
+btn.onclick=()=>{
+  files.forEach(f=>{
+    const a=document.createElement("a");
+    a.href="/uploads/"+f;
+    a.download="";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
 };
-
-// swipe up gesture
-cart.addEventListener("touchstart",e=>{
-  startY = e.touches[0].clientY;
-});
-
-cart.addEventListener("touchmove",e=>{
-  if(!startY) return;
-  const diff = startY - e.touches[0].clientY;
-  if(diff > 120 && !sent){
-    sent = true;
-    sendCart();
-  }
-});
-
-async function sendCart(){
-  // animate cart OUT of phone
-  cart.style.transition="1s cubic-bezier(.4,2,.6,1)";
-  cart.style.bottom="120%";
-
-  const files=[...filesInput.files];
-
-  // tell PC cart is coming
-  socket.emit("telekinesis-start",{
-    room:ROOM,
-    files:files.map(f=>f.name)
-  });
-
-  const CHUNK = 30*1024*1024;
-  for(const f of files){
-    const total = Math.ceil(f.size/CHUNK);
-    for(let i=0;i<total;i++){
-      const chunk=f.slice(i*CHUNK,(i+1)*CHUNK);
-      const fd=new FormData();
-      fd.append("chunk",chunk);
-      fd.append("fileName",f.name);
-      fd.append("chunkIndex",i);
-      fd.append("totalChunks",total);
-      fd.append("room",ROOM);
-      await fetch("/upload-chunk",{method:"POST",body:fd});
-    }
-  }
-}
 </script>
 
 </body>

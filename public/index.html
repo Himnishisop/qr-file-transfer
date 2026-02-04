@@ -2,82 +2,133 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Receiver</title>
-<script src="/socket.io/socket.io.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Send Cart</title>
+
 <style>
 body{
-  background:#050505; color:#fff;
-  font-family:system-ui; text-align:center;
-}
-.file{
-  margin:16px auto;
-  padding:16px;
-  width:80%;
-  max-width:420px;
-  border-radius:16px;
-  background:linear-gradient(45deg,#ff0055,#00ffff);
-  color:#000;
-  animation:pop .5s ease;
-}
-.bar{
-  height:10px;
-  background:#222;
-  border-radius:10px;
+  margin:0;
+  background:#0b0b0b;
+  color:#fff;
+  font-family:system-ui;
   overflow:hidden;
+}
+
+h1{text-align:center;margin:20px}
+
+input{display:block;margin:20px auto}
+
+#cart{
+  position:fixed;
+  bottom:-200px;
+  left:0;
+  right:0;
+  height:180px;
+  background:linear-gradient(180deg,#ff0055,#ff8800);
+  border-radius:30px 30px 0 0;
+  padding:20px;
+  transition:.4s ease;
+  touch-action:none;
+}
+
+#cart.visible{bottom:0}
+
+#cart h2{text-align:center;margin:0}
+
+#filesList{
+  max-height:90px;
+  overflow:auto;
   margin-top:10px;
+  font-size:.9em;
 }
-.fill{
-  height:100%;
-  width:0%;
+
+.handle{
+  width:50px;
+  height:6px;
   background:#000;
-  transition:width .2s;
-}
-@keyframes pop{
-  from{transform:scale(.3);opacity:0}
-  to{transform:scale(1);opacity:1}
+  border-radius:10px;
+  margin:0 auto 10px;
 }
 </style>
 </head>
+
 <body>
 
-<h1>🧠 Telekinesis Receiver</h1>
-<div id="files"></div>
+<h1>Select Files</h1>
+<input type="file" id="files" multiple>
 
+<div id="cart">
+  <div class="handle"></div>
+  <h2>🛒 Send Cart</h2>
+  <div id="filesList"></div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
 <script>
 const socket = io();
-socket.emit("join-room","room1");
+const ROOM = "room1";
+socket.emit("join-room",ROOM);
 
-const filesDiv = document.getElementById("files");
-const fileMap = {};
+const filesInput = document.getElementById("files");
+const cart = document.getElementById("cart");
+const list = document.getElementById("filesList");
 
-socket.on("file-init", files => {
-  files.forEach(name => {
-    const box = document.createElement("div");
-    box.className = "file";
-    box.innerHTML = `
-      <b>${name}</b>
-      <div class="bar"><div class="fill"></div></div>
-    `;
-    filesDiv.appendChild(box);
-    fileMap[name] = box.querySelector(".fill");
+let startY = null;
+let sent = false;
+
+filesInput.onchange = () => {
+  list.innerHTML = "";
+  [...filesInput.files].forEach(f=>{
+    const d=document.createElement("div");
+    d.textContent="• "+f.name;
+    list.appendChild(d);
   });
+  cart.classList.add("visible");
+};
+
+// swipe up gesture
+cart.addEventListener("touchstart",e=>{
+  startY = e.touches[0].clientY;
 });
 
-socket.on("file-progress", data => {
-  const percent = Math.floor((data.uploaded / data.total) * 100);
-  if (fileMap[data.fileName]) {
-    fileMap[data.fileName].style.width = percent + "%";
+cart.addEventListener("touchmove",e=>{
+  if(!startY) return;
+  const diff = startY - e.touches[0].clientY;
+  if(diff > 120 && !sent){
+    sent = true;
+    sendCart();
   }
 });
 
-socket.on("file-complete", name => {
-  const a = document.createElement("a");
-  a.href = "/uploads/" + name;
-  a.download = "";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-});
+async function sendCart(){
+  // animate cart OUT of phone
+  cart.style.transition="1s cubic-bezier(.4,2,.6,1)";
+  cart.style.bottom="120%";
+
+  const files=[...filesInput.files];
+
+  // tell PC cart is coming
+  socket.emit("telekinesis-start",{
+    room:ROOM,
+    files:files.map(f=>f.name)
+  });
+
+  const CHUNK = 30*1024*1024;
+  for(const f of files){
+    const total = Math.ceil(f.size/CHUNK);
+    for(let i=0;i<total;i++){
+      const chunk=f.slice(i*CHUNK,(i+1)*CHUNK);
+      const fd=new FormData();
+      fd.append("chunk",chunk);
+      fd.append("fileName",f.name);
+      fd.append("chunkIndex",i);
+      fd.append("totalChunks",total);
+      fd.append("room",ROOM);
+      await fetch("/upload-chunk",{method:"POST",body:fd});
+    }
+  }
+}
 </script>
+
 </body>
 </html>

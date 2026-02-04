@@ -1,93 +1,104 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Receiver Cart</title>
+<meta charset="UTF-8" />
+<title>Receiver</title>
 <script src="/socket.io/socket.io.js"></script>
 
 <style>
-body{
-  margin:0;
-  background:#050505;
+body {
+  background:#000;
   color:#fff;
-  font-family:system-ui;
+  font-family:sans-serif;
   overflow:hidden;
 }
-
-#cart{
+#cart {
   position:fixed;
-  bottom:-300px;
+  bottom:-200px;
   left:50%;
   transform:translateX(-50%);
-  width:400px;
-  background:linear-gradient(180deg,#00ffff,#ff00aa);
-  border-radius:30px;
-  padding:20px;
-  text-align:center;
-  transition:1s cubic-bezier(.2,1.8,.4,1);
+  width:300px;
+  height:180px;
+  background:#22c55e;
+  border-radius:25px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  font-size:18px;
+  transition:.8s cubic-bezier(.2,1,.2,1);
 }
-
-#cart.show{bottom:40%}
-
-#files{font-size:.9em;margin-top:10px}
-
-button{
-  margin-top:20px;
-  padding:14px 26px;
+#cart.show {
+  bottom:40%;
+}
+#progress {
+  width:80%;
+  height:8px;
+  background:#000;
+  margin-top:10px;
+}
+#bar {
+  height:100%;
+  width:0%;
+  background:#fff;
+}
+button {
+  margin-top:12px;
+  padding:10px 20px;
   border:none;
-  border-radius:14px;
-  font-size:1em;
-  cursor:pointer;
+  border-radius:12px;
+  background:#000;
+  color:#fff;
+  display:none;
 }
 </style>
 </head>
 
 <body>
-
-<h1 style="text-align:center;margin-top:20px">
-🧠 Receiver Online
-</h1>
+<h2>🧠 Receiver Online</h2>
 
 <div id="cart">
-  <h2>🛒 Incoming Cart</h2>
-  <div id="files"></div>
-  <button id="download" style="display:none">Download Cart</button>
+  <div id="title"></div>
+  <div id="progress"><div id="bar"></div></div>
+  <button id="download">Download</button>
 </div>
 
 <script>
 const socket = io();
-socket.emit("join-room","room1");
+const cart = document.getElementById("cart");
+const bar = document.getElementById("bar");
+const title = document.getElementById("title");
+const btn = document.getElementById("download");
 
-const cart=document.getElementById("cart");
-const filesDiv=document.getElementById("files");
-const btn=document.getElementById("download");
+let chunks = [];
+let received = 0;
+let fileName = "";
+let fileSize = 0;
 
-let files=[];
-
-socket.on("file-init",list=>{
-  files=list;
-  filesDiv.innerHTML="";
-  list.forEach(f=>{
-    const d=document.createElement("div");
-    d.textContent="• "+f;
-    filesDiv.appendChild(d);
-  });
+socket.on("cart-appear", meta => {
+  fileName = meta.name;
+  fileSize = meta.size;
+  title.innerText = "📦 " + fileName;
   cart.classList.add("show");
-
-  setTimeout(()=>btn.style.display="inline-block",1200);
 });
 
-btn.onclick=()=>{
-  files.forEach(f=>{
-    const a=document.createElement("a");
-    a.href="/uploads/"+f;
-    a.download="";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  });
+socket.on("file-chunk", chunk => {
+  chunks.push(chunk.data);
+  received += chunk.data.byteLength;
+  bar.style.width = ((received / fileSize) * 100) + "%";
+});
+
+socket.on("file-done", () => {
+  btn.style.display = "block";
+});
+
+btn.onclick = () => {
+  const blob = new Blob(chunks);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = fileName;
+  a.click();
 };
 </script>
-
 </body>
 </html>

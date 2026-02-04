@@ -1,50 +1,36 @@
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
-const fs = require("fs");
-const path = require("path");
+import express from "express";
+import http from "http";
+import { Server } from "socket.io";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  maxHttpBufferSize: 500 * 1024 * 1024 // 500MB
+});
 
-app.use(express.static("public"));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-let activeSocket = null;
+app.use(express.static(__dirname));
 
 io.on("connection", (socket) => {
-  console.log("connected:", socket.id);
+  console.log("🧠 Receiver Online:", socket.id);
 
-  socket.on("register-desktop", () => {
-    activeSocket = socket;
-    console.log("desktop ready");
+  socket.on("cart-start", (meta) => {
+    socket.broadcast.emit("cart-appear", meta);
   });
 
-  socket.on("send-file", ({ name, buffer }) => {
-    if (!activeSocket) return;
-
-    const filePath = path.join(__dirname, "downloads", name);
-    fs.writeFileSync(filePath, Buffer.from(buffer));
-
-    activeSocket.emit("file-start", {
-      name,
-      size: buffer.byteLength
-    });
-
-    activeSocket.emit("file-progress", 100);
-
-    activeSocket.emit("file-complete", {
-      name
-    });
-
-    console.log("file sent:", name);
+  socket.on("file-chunk", (chunk) => {
+    socket.broadcast.emit("file-chunk", chunk);
   });
 
-  socket.on("disconnect", () => {
-    if (socket === activeSocket) activeSocket = null;
+  socket.on("file-done", (data) => {
+    socket.broadcast.emit("file-done", data);
   });
 });
 
-server.listen(3000, () =>
-  console.log("🔥 server running on http://localhost:3000")
-);
+server.listen(3000, () => {
+  console.log("🔥 Server running on http://localhost:3000");
+});

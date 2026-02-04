@@ -1,134 +1,93 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Send Cart</title>
+<meta charset="UTF-8" />
+<title>Sender</title>
+<script src="/socket.io/socket.io.js"></script>
 
 <style>
-body{
-  margin:0;
-  background:#0b0b0b;
+body {
+  background:#000;
   color:#fff;
-  font-family:system-ui;
+  font-family:sans-serif;
   overflow:hidden;
 }
-
-h1{text-align:center;margin:20px}
-
-input{display:block;margin:20px auto}
-
-#cart{
+#cart {
   position:fixed;
   bottom:-200px;
-  left:0;
-  right:0;
-  height:180px;
-  background:linear-gradient(180deg,#ff0055,#ff8800);
-  border-radius:30px 30px 0 0;
-  padding:20px;
-  transition:.4s ease;
-  touch-action:none;
+  left:50%;
+  transform:translateX(-50%);
+  width:90%;
+  height:150px;
+  background:#7c3aed;
+  border-radius:20px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:20px;
+  transition:.5s;
 }
-
-#cart.visible{bottom:0}
-
-#cart h2{text-align:center;margin:0}
-
-#filesList{
-  max-height:90px;
-  overflow:auto;
-  margin-top:10px;
-  font-size:.9em;
+#cart.show {
+  bottom:20px;
 }
-
-.handle{
-  width:50px;
-  height:6px;
-  background:#000;
-  border-radius:10px;
-  margin:0 auto 10px;
+#cart.swipe {
+  bottom:120%;
+  opacity:0;
 }
 </style>
 </head>
 
 <body>
+<input type="file" id="file" />
 
-<h1>Select Files</h1>
-<input type="file" id="files" multiple>
+<div id="cart">📦 Swipe Up to Send</div>
 
-<div id="cart">
-  <div class="handle"></div>
-  <h2>🛒 Send Cart</h2>
-  <div id="filesList"></div>
-</div>
-
-<script src="/socket.io/socket.io.js"></script>
 <script>
 const socket = io();
-const ROOM = "room1";
-socket.emit("join-room",ROOM);
-
-const filesInput = document.getElementById("files");
+const input = document.getElementById("file");
 const cart = document.getElementById("cart");
-const list = document.getElementById("filesList");
 
-let startY = null;
-let sent = false;
+let file;
 
-filesInput.onchange = () => {
-  list.innerHTML = "";
-  [...filesInput.files].forEach(f=>{
-    const d=document.createElement("div");
-    d.textContent="• "+f.name;
-    list.appendChild(d);
-  });
-  cart.classList.add("visible");
+input.onchange = () => {
+  file = input.files[0];
+  cart.classList.add("show");
 };
 
-// swipe up gesture
-cart.addEventListener("touchstart",e=>{
-  startY = e.touches[0].clientY;
+let startY = 0;
+cart.addEventListener("touchstart", e => startY = e.touches[0].clientY);
+cart.addEventListener("touchend", e => {
+  let endY = e.changedTouches[0].clientY;
+  if (startY - endY > 80) sendFile();
 });
 
-cart.addEventListener("touchmove",e=>{
-  if(!startY) return;
-  const diff = startY - e.touches[0].clientY;
-  if(diff > 120 && !sent){
-    sent = true;
-    sendCart();
-  }
-});
+function sendFile() {
+  cart.classList.add("swipe");
 
-async function sendCart(){
-  // animate cart OUT of phone
-  cart.style.transition="1s cubic-bezier(.4,2,.6,1)";
-  cart.style.bottom="120%";
-
-  const files=[...filesInput.files];
-
-  // tell PC cart is coming
-  socket.emit("telekinesis-start",{
-    room:ROOM,
-    files:files.map(f=>f.name)
+  socket.emit("cart-start", {
+    name: file.name,
+    size: file.size
   });
 
-  const CHUNK = 30*1024*1024;
-  for(const f of files){
-    const total = Math.ceil(f.size/CHUNK);
-    for(let i=0;i<total;i++){
-      const chunk=f.slice(i*CHUNK,(i+1)*CHUNK);
-      const fd=new FormData();
-      fd.append("chunk",chunk);
-      fd.append("fileName",f.name);
-      fd.append("chunkIndex",i);
-      fd.append("totalChunks",total);
-      fd.append("room",ROOM);
-      await fetch("/upload-chunk",{method:"POST",body:fd});
-    }
+  const chunkSize = 30 * 1024 * 1024;
+  let offset = 0;
+  const reader = new FileReader();
+
+  reader.onload = e => {
+    socket.emit("file-chunk", {
+      data: e.target.result,
+      name: file.name
+    });
+    offset += chunkSize;
+    if (offset < file.size) read();
+    else socket.emit("file-done", { name: file.name });
+  };
+
+  function read() {
+    reader.readAsArrayBuffer(file.slice(offset, offset + chunkSize));
   }
+  read();
 }
 </script>
-
 </body>
 </html>
